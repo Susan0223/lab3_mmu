@@ -15,9 +15,7 @@
 #define max_page_num 64
 using namespace std;
 
-/***********************************/
-// class Definition
-/***********************************/
+/*********************************** struct and class ***********************************/
 
 typedef struct VMA{
 public:
@@ -26,7 +24,6 @@ public:
     bool write_protected;
     bool file_mapped;
 } VAM;
-
 typedef struct pte_t {
     unsigned int VALID : 1;
     unsigned int REFERENCED : 1;
@@ -39,56 +36,64 @@ typedef struct pte_t {
     unsigned int CONFIGURATED : 1;
 
 } pte_t;
-
 typedef struct frame_t{
     int pid;
     int frame_id;
     int vpage;
     bool dirty;
 } frame_t;
-
+typedef struct summary_t{
+    int sevg_count;
+    int segprot_count;
+    int unmap_count;
+    int map_count;
+    int pageins_count;
+    int pageouts_count;
+    int zero_count;
+} summary_t;
 class Process{
 public:
     int pid;
+    summary_t summary;
     vector<VMA> vma_vector;
     vector<pte_t> page_table;
     Process(): page_table(max_page_num){};
 
 };
 
-/***********************************/
-// global variable
-/***********************************/
+/*********************************** global variable ***********************************/
 
 int frame_size = 16;
+int victim_frame_index = 0;
 Process* curr_proc;
-
-vector<frame_t> frame_table;
-deque<frame_t> free_pool;
+deque<frame_t> frame_table;
+deque<frame_t*> victim_table;
+deque<frame_t*> free_pool;
 vector<Process*> proc_vector;
 Process* proc;
 vector<pair<string, int>> instruction_list;
-int victim_frame_index = 0;
 
-/***********************************/
-// Pagers
-/***********************************/
+/*********************************** summary variable **********************************/
 
+unsigned long long inst_count;
+unsigned long long proc_exit_count;
+unsigned long long context_switch_count;
+
+/*********************************** Pagers ***********************************/
 class Pager {
 public:
     virtual frame_t* select_victim_frame() = 0;
 };
 class FIFO : public Pager{
 public:
-
     frame_t* select_victim_frame(){
-        cout << "select victim frame" << endl;
-        if(victim_frame_index == frame_table.size()){
+        //cout << "select victim frame" << endl;
+        if(victim_frame_index == frame_size){
             victim_frame_index = 0;
-            return &frame_table.at(victim_frame_index);
+            return victim_table.at(victim_frame_index);
         }
-        frame_t* frame = &frame_table.at(victim_frame_index);
-        cout << "victim frame #: " + to_string() << endl;
+        frame_t* frame = victim_table.at(victim_frame_index);
+        //cout << "victim frame pid#: " + to_string(frame->pid) << endl;
         victim_frame_index += 1;
         return frame;
     }
@@ -102,7 +107,6 @@ public:
 //    if (frame == NULL) frame = THE_PAGER->select_victim_frame();
 //    return frame;
 //}
-
 bool not_sevg(Process* p, int vpage){
     int sevg_flag = false;
     for(int i = 0; i < p->vma_vector.size(); i++){
@@ -181,6 +185,7 @@ void readFile(char* inputPtr){
             //cout << "instruction " + p.first + " " + to_string(p.second) << endl;
             instruction_list.push_back(p);
         }
+        inst_count = instruction_list.size();
     }
     inputFile.close();
 }
@@ -194,9 +199,10 @@ void initialize_frame_table(int frame_size){
         frame_table.push_back(frame);
     }
 }
-void initialize_free_pool(int frame_size){
-    for(int i = 0; i < frame_size; i++){
-        frame_t frame = frame_table.at(i);
+
+void initialize_free_pool(){
+    for(int i = 0; i < frame_table.size(); i++){
+        frame_t* frame = &frame_table.at(i);
         free_pool.push_back(frame);
     }
 }
@@ -212,14 +218,22 @@ void configurate_pte(int pid, int vpage){
     }
     pte->CONFIGURATED = 1;
 }
+void reset_frame_queue(){
+    while(!victim_table.empty()){
+        victim_table.pop_back();
+    }
+    initialize_free_pool();
+}
 void simulation(){
 
     /***********************************/
     initialize_frame_table(frame_size);
-    initialize_free_pool(frame_size);
     Pager* THE_PAGER = new FIFO();
+    initialize_free_pool();
+
     /***********************************/
 
+    //cout << "finish initialization" << endl;
     for(int i = 0; i < instruction_list.size(); i++) {
         //cout << "instruction " + to_string(i) << endl;
         string operation = instruction_list.at(i).first;
@@ -227,6 +241,7 @@ void simulation(){
 
         //context switch
         if (operation == "c") {
+            context_switch_count += 1;
             curr_proc = proc_vector.at(second);
             printf("%d: ==> c %d\n", i, curr_proc->pid);
         }
@@ -240,45 +255,52 @@ void simulation(){
             if (!(pte->CONFIGURATED)) {
                 configurate_pte(curr_proc->pid, vpage);
             }
+            if(!(pte->WRITE_PROTECT) && operation == "w"){
+                pte->MODIFIED = 1;
+            }
             if (!(pte->VALID)) {
                 if (not_sevg(curr_proc, vpage) == false) {
+                    curr_proc->summary.sevg_count +=1;
                     cout << "SEVG" << endl;
                 }
 
                 frame_t *victim_frame;
+
+                //choose from free_pool
                 if (free_pool.size() != 0) {
-                    frame_t frame = free_pool.front();
+                    frame_t* free_frame = free_pool.front();
+                    free_frame->pid = curr_proc->pid;
+                    free_frame->vpage = vpage;
+                    victim_table.push_back(free_frame);
+                    victim_frame = free_frame;
                     free_pool.pop_front();
-                    frame.dirty = true;
-                    frame.pid = curr_proc->pid;
-                    frame.vpage = vpage;
-                    victim_frame = &(frame);
                 }
+
+                //choose with algo
                 else {
-                    cout << "not free pool" << endl;
+
                     victim_frame = THE_PAGER->select_victim_frame();
-                    // check dirty
-                    if (victim_frame->dirty == true) {
-                        cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
-                    }
-                    // check modified / file mapped
+                    cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
+
+                    // check modified and file mapped
                     int prev_proc_id = victim_frame->pid;
                     pte_t *prev_pte = &proc_vector.at(prev_proc_id)->page_table[victim_frame->vpage];
                     if (prev_pte->MODIFIED && prev_pte->FILEMAPPED) {
-                        cout << "FOUT" << endl;
+                        cout << " FOUT" << endl;
                     } else if (prev_pte->MODIFIED) {
                         prev_pte->PAGEDOUT = 1;
-                        cout << "OUT" << endl;
+                        cout << " OUT" << endl;
                     }
+
                     //now victim_frame is available -> reset prev pte
                     prev_pte->VALID = 0;
                     prev_pte->MODIFIED = 0;
                     prev_pte->REFERENCED = 0;
                     prev_pte->frame_number = 0;
                 }
+
                 // reset curr pte and frame
                 victim_frame->vpage = vpage;
-
                 victim_frame->pid = curr_proc->pid;
                 pte->frame_number = victim_frame->frame_id;
                 pte->VALID = 1;
@@ -294,6 +316,32 @@ void simulation(){
         }
         if (operation == "e"){
 
+            proc_exit_count += 1;
+            printf("EXIT current process %d\n", curr_proc->pid);
+
+            // check page table and reset flags
+            for(int i = 0; i < curr_proc->page_table.size(); i++){
+                pte_t* pte = &curr_proc->page_table.at(i);
+                summary_t summary = curr_proc->summary;
+                frame_t* frame = &frame_table.at(pte->frame_number);
+                if(pte->VALID){
+                    printf(" unmap %d:%d", curr_proc->pid, frame->vpage);
+                    summary.unmap_count += 1;
+                    frame->pid = -1;
+                    frame->vpage = -1;
+                    frame->dirty = false;
+                }
+                pte->VALID = 0;
+                pte->frame_number = -1;
+                pte->MODIFIED = 0;
+                pte->WRITE_PROTECT = 0;
+                pte->CONFIGURATED = 0;
+                pte->PAGEDOUT = 0;
+                pte->REFERENCED = 0;
+                pte->FILEMAPPED = 0;
+            }
+
+            reset_frame_queue();
         }
     }
 }
@@ -302,7 +350,7 @@ int main(int argc, char *argv[]){
 
     readFile(argv[1]);
     //for(int i = 0; i < proc_vector.size(); i++){ cout << "proc id " + to_string(proc_vector.at(i)->pid) << endl;}
-
+    cout << "finish reading file" << endl;
     simulation();
 //    for(int i = 0; i < proc_vector.size(); i++){
 //        cout << "proc id:" + to_string(proc_vector.at(i)->pid) + " vma size " + to_string(proc_vector.at(i)->vma_vector.size()) << endl;
