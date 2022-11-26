@@ -89,7 +89,6 @@ public:
     frame_t* select_victim_frame(){
         if(victim_frame_index == frame_size){
             victim_frame_index = 0;
-//            return victim_table.at(victim_frame_index);
         }
         frame_t* frame = victim_table.at(victim_frame_index);
         victim_frame_index += 1;
@@ -250,6 +249,7 @@ void simulation(){
                 if (not_sevg(curr_proc, vpage) == false) {
                     curr_proc->summary.sevg_count +=1;
                     cout << " SEVG" << endl;
+                    continue;
                 }
 
                 frame_t *victim_frame;
