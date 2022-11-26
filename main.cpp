@@ -15,7 +15,7 @@
 #define max_page_num 64
 using namespace std;
 
-/*********************************** struct and class ***********************************/
+/*********************************** struct and class *************************/
 
 typedef struct VMA{
 public:
@@ -61,7 +61,7 @@ public:
 
 };
 
-/*********************************** global variable ***********************************/
+/****************************** global variable ******************************/
 
 int frame_size = 16;
 int victim_frame_index = 0;
@@ -73,7 +73,7 @@ vector<Process*> proc_vector;
 Process* proc;
 vector<pair<string, int>> instruction_list;
 
-/*********************************** summary variable **********************************/
+/****************************** summary variable *****************************/
 
 unsigned long long inst_count;
 unsigned long long proc_exit_count;
@@ -87,26 +87,17 @@ public:
 class FIFO : public Pager{
 public:
     frame_t* select_victim_frame(){
-        //cout << "select victim frame" << endl;
         if(victim_frame_index == frame_size){
             victim_frame_index = 0;
-            return victim_table.at(victim_frame_index);
+//            return victim_table.at(victim_frame_index);
         }
         frame_t* frame = victim_table.at(victim_frame_index);
-        //cout << "victim frame pid#: " + to_string(frame->pid) << endl;
         victim_frame_index += 1;
         return frame;
     }
 };
 
-/***********************************/
-// methods
-/***********************************/
-//frame_t *get_frame() {
-//    frame_t *frame = allocate_frame_from_free_list();
-//    if (frame == NULL) frame = THE_PAGER->select_victim_frame();
-//    return frame;
-//}
+/*********************************** methods ***********************************/
 bool not_sevg(Process* p, int vpage){
     int sevg_flag = false;
     for(int i = 0; i < p->vma_vector.size(); i++){
@@ -199,11 +190,11 @@ void initialize_frame_table(int frame_size){
         frame_table.push_back(frame);
     }
 }
-
 void initialize_free_pool(){
     for(int i = 0; i < frame_table.size(); i++){
         frame_t* frame = &frame_table.at(i);
         free_pool.push_back(frame);
+        //cout << frame->frame_id << endl;
     }
 }
 void configurate_pte(int pid, int vpage){
@@ -226,12 +217,11 @@ void reset_frame_queue(){
 }
 void simulation(){
 
-    /***********************************/
     initialize_frame_table(frame_size);
     Pager* THE_PAGER = new FIFO();
     initialize_free_pool();
 
-    /***********************************/
+/*******************************************************************************/
 
     //cout << "finish initialization" << endl;
     for(int i = 0; i < instruction_list.size(); i++) {
@@ -255,13 +245,11 @@ void simulation(){
             if (!(pte->CONFIGURATED)) {
                 configurate_pte(curr_proc->pid, vpage);
             }
-            if(!(pte->WRITE_PROTECT) && operation == "w"){
-                pte->MODIFIED = 1;
-            }
+
             if (!(pte->VALID)) {
                 if (not_sevg(curr_proc, vpage) == false) {
                     curr_proc->summary.sevg_count +=1;
-                    cout << "SEVG" << endl;
+                    cout << " SEVG" << endl;
                 }
 
                 frame_t *victim_frame;
@@ -271,8 +259,9 @@ void simulation(){
                     frame_t* free_frame = free_pool.front();
                     free_frame->pid = curr_proc->pid;
                     free_frame->vpage = vpage;
-                    victim_table.push_back(free_frame);
+                    pte->frame_number = free_frame->frame_id;
                     victim_frame = free_frame;
+                    victim_table.push_back(victim_frame);
                     free_pool.pop_front();
                 }
 
@@ -302,8 +291,8 @@ void simulation(){
                 // reset curr pte and frame
                 victim_frame->vpage = vpage;
                 victim_frame->pid = curr_proc->pid;
-                pte->frame_number = victim_frame->frame_id;
                 pte->VALID = 1;
+
                 if (pte->FILEMAPPED) {
                     cout << " FIN" << endl;
                 } else if (pte->PAGEDOUT) {
@@ -312,8 +301,16 @@ void simulation(){
                     cout << " ZERO" << endl;
                 }
                 cout << " MAP " + to_string(victim_frame->frame_id) << endl;
+
+                if(pte->WRITE_PROTECT && operation == "w"){
+                    curr_proc->summary.segprot_count += 1;
+                    cout << " SEGPROT" << endl;
+                }else if(operation == "w"){
+                    pte->MODIFIED = 1;
+                }
             }
         }
+        //exit
         if (operation == "e"){
 
             proc_exit_count += 1;
@@ -347,36 +344,6 @@ void simulation(){
 }
 
 int main(int argc, char *argv[]){
-
     readFile(argv[1]);
-    //for(int i = 0; i < proc_vector.size(); i++){ cout << "proc id " + to_string(proc_vector.at(i)->pid) << endl;}
-    cout << "finish reading file" << endl;
     simulation();
-//    for(int i = 0; i < proc_vector.size(); i++){
-//        cout << "proc id:" + to_string(proc_vector.at(i)->pid) + " vma size " + to_string(proc_vector.at(i)->vma_vector.size()) << endl;
-//    }
-//    cout << "instruction list size " + to_string(instruction_list.size()) << endl;
-
-    //handle_input();
-    //simulation();
-    //read file
-        //create process vector
-            //virtual memory addresses
-        //create frame_table
-        //create free pool
-    //determine algorithm
-    //simulation
-        //context switch
-        //read
-            //segmentation fault exception
-        //write
-            //segmentation fault exception
-            //check free pool -> paging
-                //find victim - Pager Class
-                //unmap the victim = removed from page_table_entry
-                //save frame to disk
-                //fill frame with current instruction address space
-                //map it
-            //mark M and R bit
-        //exit
 }
