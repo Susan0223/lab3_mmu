@@ -193,7 +193,6 @@ void initialize_free_pool(){
     for(int i = 0; i < frame_table.size(); i++){
         frame_t* frame = &frame_table.at(i);
         free_pool.push_back(frame);
-        //cout << frame->frame_id << endl;
     }
 }
 void configurate_pte(int pid, int vpage){
@@ -291,6 +290,7 @@ void simulation(){
                 // reset curr pte and frame
                 victim_frame->vpage = vpage;
                 victim_frame->pid = curr_proc->pid;
+                pte->frame_number = victim_frame->frame_id;
                 pte->VALID = 1;
 
                 if (pte->FILEMAPPED) {
@@ -301,32 +301,35 @@ void simulation(){
                     cout << " ZERO" << endl;
                 }
                 cout << " MAP " + to_string(victim_frame->frame_id) << endl;
+            }
 
-                if(pte->WRITE_PROTECT && operation == "w"){
-                    curr_proc->summary.segprot_count += 1;
-                    cout << " SEGPROT" << endl;
-                }else if(operation == "w"){
-                    pte->MODIFIED = 1;
-                }
+            if(pte->WRITE_PROTECT && operation == "w"){
+                curr_proc->summary.segprot_count += 1;
+                cout << " SEGPROT" << endl;
+            }else if(operation == "w"){
+                pte->MODIFIED = 1;
             }
         }
         //exit
         if (operation == "e"){
 
+            printf("%d: ==> e %d\n", i, curr_proc->pid);
             proc_exit_count += 1;
             printf("EXIT current process %d\n", curr_proc->pid);
 
             // check page table and reset flags
             for(int i = 0; i < curr_proc->page_table.size(); i++){
-                pte_t* pte = &curr_proc->page_table.at(i);
                 summary_t summary = curr_proc->summary;
-                frame_t* frame = &frame_table.at(pte->frame_number);
+                pte_t* pte = &curr_proc->page_table[i];
+
                 if(pte->VALID){
-                    printf(" unmap %d:%d", curr_proc->pid, frame->vpage);
+                    printf(" UNMAP %d:%d\n", curr_proc->pid, i );
                     summary.unmap_count += 1;
+                    frame_t* frame = &frame_table[pte->frame_number];
                     frame->pid = -1;
                     frame->vpage = -1;
                     frame->dirty = false;
+                    free_pool.push_back(frame);
                 }
                 pte->VALID = 0;
                 pte->frame_number = -1;
@@ -338,7 +341,7 @@ void simulation(){
                 pte->FILEMAPPED = 0;
             }
 
-            reset_frame_queue();
+            //reset_frame_queue();
         }
     }
 }
