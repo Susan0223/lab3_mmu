@@ -100,7 +100,6 @@ public:
     frame_t* select_victim_frame(){
 
         frame_t* victim_frame;
-        int count = 0;
 
         while(true){
             if(victim_frame_index == frame_size){
@@ -108,19 +107,30 @@ public:
             }
             victim_frame = victim_table.at(victim_frame_index);
             Process* p = proc_vector[victim_frame->pid];
-            pte_t* page = &p->page_table[victim_frame->vpage];
-            if(count == frame_size){
-                page->REFERENCED = 0;
-                break;
-            }
-            if(!page->REFERENCED){
-                victim_frame_index += 1;
-                break;
+            pte_t* pte = &p->page_table[victim_frame->vpage];
+            if(pte->REFERENCED){
+                pte->REFERENCED = 0;
+                victim_frame_index +=1;
+                continue;
             }else{
-                page->REFERENCED = 0;
-                victim_frame_index += 1;
-                count += 1;
+                pte->REFERENCED = 1;
+                victim_frame_index +=1;
+                break;
             }
+//            if(count == frame_size + 1){
+//                page->REFERENCED = 0;
+//                victim_frame_index += 1;
+//                break;
+//            }
+//            if(!page->REFERENCED){
+//                page->REFERENCED = 1;
+//                victim_frame_index += 1;
+//                break;
+//            }else{
+//                page->REFERENCED = 0;
+//                victim_frame_index += 1;
+//                count += 1;
+//            }
         }
         return victim_frame;
     }
@@ -274,6 +284,7 @@ void simulation(){
             }
 
             if (!(pte->VALID)) {
+
                 if (not_sevg(curr_proc, vpage) == false) {
                     curr_proc->summary.sevg_count +=1;
                     cout << " SEVG" << endl;
@@ -281,7 +292,6 @@ void simulation(){
                 }
 
                 frame_t *victim_frame;
-
                 //choose from free_pool
                 if (free_pool.size() != 0) {
                     frame_t* free_frame = free_pool.front();
@@ -292,13 +302,9 @@ void simulation(){
                     victim_table.push_back(victim_frame);
                     free_pool.pop_front();
                 }
-
-                //choose victim frame
-                else {
-
+                else { //choose victim frame
                     victim_frame = THE_PAGER->select_victim_frame();
                     cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
-
                     // check modified and file mapped
                     int prev_proc_id = victim_frame->pid;
                     pte_t *prev_pte = &proc_vector.at(prev_proc_id)->page_table[victim_frame->vpage];
@@ -308,7 +314,6 @@ void simulation(){
                         prev_pte->PAGEDOUT = 1;
                         cout << " OUT" << endl;
                     }
-
                     //now victim_frame is available -> reset prev pte
                     prev_pte->VALID = 0;
                     prev_pte->MODIFIED = 0;
@@ -332,10 +337,11 @@ void simulation(){
                 cout << " MAP " + to_string(victim_frame->frame_id) << endl;
             }
 
+            pte->REFERENCED = 1;
             // write --> MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
                 curr_proc->summary.segprot_count += 1;
-                pte->REFERENCED = 1;
+
                 cout << " SEGPROT" << endl;
             }else if(operation == "w"){
                 pte->MODIFIED = 1;
