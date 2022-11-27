@@ -95,6 +95,36 @@ public:
         return frame;
     }
 };
+class CLOCK : public Pager{
+public:
+    frame_t* select_victim_frame(){
+
+        frame_t* victim_frame;
+        int count = 0;
+
+        while(true){
+            if(victim_frame_index == frame_size){
+                victim_frame_index = 0;
+            }
+            victim_frame = victim_table.at(victim_frame_index);
+            Process* p = proc_vector[victim_frame->pid];
+            pte_t* page = &p->page_table[victim_frame->vpage];
+            if(count == frame_size){
+                page->REFERENCED = 0;
+                break;
+            }
+            if(!page->REFERENCED){
+                victim_frame_index += 1;
+                break;
+            }else{
+                page->REFERENCED = 0;
+                victim_frame_index += 1;
+                count += 1;
+            }
+        }
+        return victim_frame;
+    }
+};
 
 /*********************************** methods ***********************************/
 bool not_sevg(Process* p, int vpage){
@@ -216,14 +246,13 @@ void reset_frame_queue(){
 void simulation(){
 
     initialize_frame_table(frame_size);
-    Pager* THE_PAGER = new FIFO();
+    Pager* THE_PAGER = new CLOCK();
     initialize_free_pool();
 
 /*******************************************************************************/
 
-    //cout << "finish initialization" << endl;
     for(int i = 0; i < instruction_list.size(); i++) {
-        //cout << "instruction " + to_string(i) << endl;
+
         string operation = instruction_list.at(i).first;
         int second = instruction_list.at(i).second;
 
@@ -264,7 +293,7 @@ void simulation(){
                     free_pool.pop_front();
                 }
 
-                //choose with algo
+                //choose victim frame
                 else {
 
                     victim_frame = THE_PAGER->select_victim_frame();
@@ -303,8 +332,10 @@ void simulation(){
                 cout << " MAP " + to_string(victim_frame->frame_id) << endl;
             }
 
+            // write --> MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
                 curr_proc->summary.segprot_count += 1;
+                pte->REFERENCED = 1;
                 cout << " SEGPROT" << endl;
             }else if(operation == "w"){
                 pte->MODIFIED = 1;
@@ -340,8 +371,6 @@ void simulation(){
                 pte->REFERENCED = 0;
                 pte->FILEMAPPED = 0;
             }
-
-            //reset_frame_queue();
         }
     }
 }
