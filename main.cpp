@@ -63,7 +63,7 @@ public:
 
 /****************************** global variable ******************************/
 
-int frame_size = 16;
+int frame_size = 32;
 int victim_frame_index = 0;
 Process* curr_proc;
 deque<frame_t> frame_table;
