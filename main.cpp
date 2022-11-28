@@ -65,6 +65,7 @@ public:
 
 int frame_size = 32;
 int victim_frame_index = 0;
+int instruction_count = 0;
 Process* curr_proc;
 deque<frame_t> frame_table;
 deque<frame_t*> victim_table;
@@ -135,7 +136,50 @@ public:
         return victim_frame;
     }
 };
+class NRU : public Pager{
+public:
+    frame_t* select_victim_frame(){
+        frame_t* victim_frame;
+        int frame_count = 0;
+        pte_t* highest_class_pte;
+        while(frame_count < frame_size){
+            victim_frame = victim_table[victim_frame_index];
+            Process* p = proc_vector[victim_frame->pid];
+            pte_t* pte = &p->page_table[victim_frame->vpage];
+            if(pte->REFERENCED == 0 && pte->MODIFIED == 0){
+                victim_frame_index += 1;
+                return victim_frame;
+            }
+            if(highest_class_pte->REFERENCED == pte->REFERENCED && highest_class_pte->MODIFIED == pte->MODIFIED){
+                victim_frame_index ++;
+                continue;
+            }
+            if(pte->REFERENCED == 0) {
+                victim_frame_index ++;
+                highest_class_pte = pte;
+                continue;
+            }
+            if(pte->MODIFIED == 0){
+                victim_frame_index ++;
+                highest_class_pte = pte;
+                continue;
+            }
+        }
 
+        //reset REFERENCE bit
+        if(instruction_count >= 50){
+            victim_frame = victim_table[victim_frame_index];
+            Process* p = proc_vector[victim_frame->pid];
+            for(int i = 0; i < p->page_table.size(); i++){
+                pte_t* pte = &p->page_table[i];
+                pte->REFERENCED = 0;
+            }
+            instruction_count = 0;
+        }
+
+        return victim_frame;
+    }
+};
 /*********************************** methods ***********************************/
 bool not_sevg(Process* p, int vpage){
     int sevg_flag = false;
@@ -256,7 +300,7 @@ void reset_frame_queue(){
 void simulation(){
 
     initialize_frame_table(frame_size);
-    Pager* THE_PAGER = new CLOCK();
+    Pager* THE_PAGER = new NRU();
     initialize_free_pool();
 
 /*******************************************************************************/
@@ -378,6 +422,8 @@ void simulation(){
                 pte->FILEMAPPED = 0;
             }
         }
+
+        instruction_count += 1;
     }
 }
 
