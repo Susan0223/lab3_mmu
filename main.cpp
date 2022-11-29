@@ -1,16 +1,9 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <string>
-#include <sstream>
 #include <stdio.h>
-#include <string.h>
-#include <cstring>
 #include <stdlib.h>
 #include <unistd.h>
-#include <ctype.h>
-#include <deque>
-#include <climits>
 
 #define max_page_num 64
 #define TAU 49
@@ -549,45 +542,62 @@ void simulation(){
                     victim_table.push_back(victim_frame);
                     free_pool.pop_front();
                 }
-                else { //choose victim frame
-                    //cout << victim_frame_index << endl;
+                else {
+
+                    // 1) choose victim frame
                     victim_frame = THE_PAGER->select_victim_frame();
-                    if(o_option) cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
-                    // check modified and file mapped
                     int prev_proc_id = victim_frame->pid;
+                    Process* prev_proc = proc_vector[prev_proc_id];
                     pte_t *prev_pte = &proc_vector.at(prev_proc_id)->page_table[victim_frame->vpage];
+
+                    // 2) unmap pte
+                    if(o_option) cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
+                    prev_proc->summary.unmaps +=1;
+
+                    // 3) check modified and file mapped
                     if (prev_pte->MODIFIED && prev_pte->FILEMAPPED) {
+                        prev_proc->summary.fouts += 1;
                         if(o_option) cout << " FOUT" << endl;
                     } else if (prev_pte->MODIFIED) {
                         prev_pte->PAGEDOUT = 1;
+                        prev_proc->summary.outs += 1;
                         if(o_option) cout << " OUT" << endl;
                     }
-                    //now victim_frame is available -> reset prev pte
+
+                    // 4) reset previous pte bit
                     prev_pte->VALID = 0;
                     prev_pte->MODIFIED = 0;
                     prev_pte->REFERENCED = 0;
                     prev_pte->frame_number = 0;
                 }
 
-                // reset curr pte and frame
+                // 5) new_pte <-> frame page
                 victim_frame->vpage = vpage;
                 victim_frame->pid = curr_proc->pid;
                 pte->frame_number = victim_frame->frame_id;
                 pte->VALID = 1;
 
+                // 6) check new_pte bit
                 if (pte->FILEMAPPED) {
+                    curr_proc->summary.fins += 1;
                     if(o_option) cout << " FIN" << endl;
                 } else if (pte->PAGEDOUT) {
+                    curr_proc->summary.ins += 1;
                     if(o_option) cout << " IN" << endl;
                 } else {
+                    curr_proc->summary.zeros += 1;
                     if(o_option) cout << " ZERO" << endl;
                 }
+
+                // 7) map frame page
+                curr_proc->summary.maps += 1;
                 if(o_option) cout << " MAP " + to_string(victim_frame->frame_id) << endl;
             }
 
+            // 8) r/w operation => pte has been referenced
             pte->REFERENCED = 1;
 
-            // write --> MODIFIED or SEGPROT
+            // 9) w operation check write_protect => MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
                 curr_proc->summary.segprot += 1;
                 if(o_option) cout << " SEGPROT" << endl;
@@ -600,14 +610,15 @@ void simulation(){
         if (operation == "e"){
 
             if(o_option) printf("%d: ==> e %d\n", i, curr_proc->pid);
-            process_exits += 1;
             if(o_option) printf("EXIT current process %d\n", curr_proc->pid);
+            process_exits += 1;
 
-            // check page table and reset flags
+            // check page table and reset bits
             for(int i = 0; i < curr_proc->page_table.size(); i++){
                 summary_t summary = curr_proc->summary;
                 pte_t* pte = &curr_proc->page_table[i];
 
+                // 1) UNMAP pte from frame page
                 if(pte->VALID){
                     if(o_option) printf(" UNMAP %d:%d\n", curr_proc->pid, i );
                     summary.unmaps += 1;
@@ -619,6 +630,8 @@ void simulation(){
                     frame->dirty = false;
                     free_pool.push_back(frame);
                 }
+
+                // 2) reset pte bits
                 pte->VALID = 0;
                 pte->frame_number = -1;
                 pte->MODIFIED = 0;
@@ -629,6 +642,7 @@ void simulation(){
                 pte->FILEMAPPED = 0;
             }
 
+            // 3) curr_proc = nullptr
             curr_proc = nullptr;
         }
         instruction_count += 1;
