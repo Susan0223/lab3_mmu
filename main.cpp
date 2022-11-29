@@ -42,7 +42,7 @@ typedef struct frame_t{
     int frame_id;
     int vpage;
     bool dirty;
-    unsigned int aging:32;
+    unsigned int counter:32;
     unsigned long last_used_time;
 } frame_t;
 typedef struct summary_t{
@@ -88,6 +88,7 @@ unsigned long long context_switch_count;
 class Pager {
 public:
     virtual frame_t* select_victim_frame() = 0;
+    virtual void reset_counter(frame_t* victim_frame){};
 };
 class FIFO : public Pager{
 public:
@@ -99,6 +100,7 @@ public:
         victim_frame_index += 1;
         return frame;
     }
+    void reset_counter(frame_t* victim_frame){}
 };
 class CLOCK : public Pager{
 public:
@@ -125,6 +127,7 @@ public:
         }
         return victim_frame;
     }
+    void reset_counter(frame_t* victim_frame){}
 };
 class NRU : public Pager{
 public:
@@ -181,27 +184,60 @@ public:
 
         return victim_frame;
     }
+    void reset_counter(frame_t* victim_frame){}
 };
 class AGING: public Pager{
 public:
-//    frame_t* select_victim_frame(){
-//
-//        if(victim_frame_index >= frame_size){
-//            victim_frame_index = 0;
-//        }
-//        frame_t* victim_frame = &frame_table[victim_frame_index];
-//        Process* p = proc_vector[victim_frame->pid];
-//        pte_t* victim_pte = &p->page_table[victim_frame->vpage];
-//
-//        unsigned long min_age = frame_table[victim_frame_index].aging >> 1;
-//        cout << min_age << endl;
-////        if (victim_pte->REFERENCED == 1) {
-////            min_age = (min_age | 0x80000000);
-////        }
-//        min_age = (min_age | 0x80000000);
-//        cout << min_age << endl;
-//
-//    }
+    void reset_counter(frame_t* victim_frame){
+        victim_frame->counter = 0;
+    }
+    frame_t* select_victim_frame(){
+
+        /* 1) right shift counter by 1
+         * 2) add current REFERENCE bit to most left
+         * 3) reset REFERENCE bit
+         * 4) min_counter = min(min_counter, curr_counter)
+         */
+
+        if(victim_frame_index >= frame_size){
+            victim_frame_index = 0;
+        }
+
+        frame_t* victim_frame;
+        pte_t* victim_pte;
+
+        victim_frame = &frame_table[victim_frame_index];
+        Process* p = proc_vector[victim_frame->pid];
+        victim_pte = &p->page_table[victim_frame->vpage];
+        unsigned int min_counter = frame_table[victim_frame_index].counter >> 1;
+        if(victim_pte->REFERENCED == 1){
+            min_counter = min_counter | 0x80000000;
+        }
+        victim_frame_index += 1;
+
+        for(int i = 0; i < frame_size; i++ ){
+            if(victim_frame_index >= frame_size){
+                victim_frame_index = 0;
+            }
+            frame_t* curr_frame = &frame_table[victim_frame_index];
+            Process* curr_p = proc_vector[curr_frame->pid];
+            pte_t* curr_pte = &curr_p->page_table[curr_frame->vpage];
+            unsigned int curr_counter = frame_table[victim_frame_index].counter >> 1;
+            if(curr_pte->REFERENCED == 1){
+                curr_counter = curr_counter | 0x80000000;
+            }
+            victim_frame_index += 1;
+
+            if(min_counter > curr_counter){
+                victim_frame = curr_frame;
+                min_counter = curr_counter;
+            }
+        }
+        reset_counter(victim_frame);
+        victim_frame_index = (victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1;
+        return victim_frame;
+    }
+
 };
 class WS: public Pager{
 public:
@@ -239,6 +275,7 @@ public:
         victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
         return victim_frame;
     }
+    void reset_counter(frame_t* victim_frame){}
 };
 /*********************************** methods ***********************************/
 bool not_sevg(Process* p, int vpage){
@@ -330,7 +367,7 @@ void initialize_frame_table(int frame_size){
         frame.dirty = false;
         frame.vpage = -1;
         frame.frame_id = i;
-        frame.aging = 0;
+        frame.counter = 0;
         frame_table.push_back(frame);
     }
 }
@@ -472,7 +509,7 @@ void simulation(){
                     frame_t* frame = &frame_table[pte->frame_number];
                     frame->pid = -1;
                     frame->vpage = -1;
-                    frame->aging = 0;
+                    frame->counter = 0;
                     frame->last_used_time = 0;
                     frame->dirty = false;
                     free_pool.push_back(frame);
