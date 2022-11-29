@@ -67,13 +67,19 @@ public:
 
 /****************************** global variable ******************************/
 
-int frame_size = 16;
+int frame_size;
 int victim_frame_index = 0;
 int instruction_count = 1;
 int NRU_victim_index = 0;
 int ofs = 0;
 int* randvals;
 int rand_num;
+bool o_option = false;
+bool page_table_option = false;
+bool frame_table_option = false;
+bool statistic_option = false;
+string pager;
+string options;
 Process* curr_proc;
 deque<frame_t> frame_table;
 deque<frame_t*> victim_table;
@@ -429,10 +435,22 @@ void reset_frame_queue(){
     }
     initialize_free_pool();
 }
+Pager* set_pager(string pager){
+    if(pager[0] == 'f') return new FIFO();
+    if(pager[0] == 'r') return new RANDOM();
+    if(pager[0] == 'c') return new CLOCK();
+    if(pager[0] == 'e') return new NRU();
+    if(pager[0] == 'a') return new AGING();
+    if(pager[0] == 'w') return new WS();
+    return nullptr;
+}
+void print_output(string options){
+    cout << page_table_option << endl;
+}
 void simulation(){
 
     initialize_frame_table(frame_size);
-    Pager* THE_PAGER = new RANDOM();
+    Pager* THE_PAGER = set_pager(pager);
     initialize_free_pool();
 
 /*******************************************************************************/
@@ -565,6 +583,49 @@ void simulation(){
 }
 
 int main(int argc, char *argv[]){
-    readFile(argv[1], argv[2]);
+
+    int c;
+    while ((c = getopt(argc, argv, "f:a:o:")) != -1){
+        switch (c) {
+            case 'f':
+                frame_size = stoi(optarg);
+                break;
+            case 'a':
+                pager = optarg;
+                break;
+            case 'o':
+                options = optarg;
+                for (auto &ch : options) {
+                    switch (ch) {
+                        case 'O':
+                            o_option = true;
+                            break;
+                        case 'P':
+                            page_table_option = true;
+                            break;
+                        case 'F':
+                            frame_table_option = true;
+                            break;
+                        case 'S':
+                            statistic_option = true;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            case '?':
+                printf("error optopt: %c\n", optopt);
+                printf("error opterr: %d\n", opterr);
+                break;
+            default:
+                exit(EXIT_FAILURE);
+                break;
+        }
+    }
+//    cout << "frame_size: " + to_string(frame_size) << endl;
+//    cout << "pager: " + pager << endl;
+//    cout << "options: " + options << endl;
+    readFile(argv[argc - 2], argv[argc - 1]);
     simulation();
+    print_output(options);
 }
