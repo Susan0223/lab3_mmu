@@ -47,14 +47,20 @@ typedef struct frame_t{
     unsigned long last_used_time;
 } frame_t;
 typedef struct summary_t{
-    int sevg_count;
-    int segprot_count;
-    int unmap_count;
-    int map_count;
-    int pageins_count;
-    int pageouts_count;
-    int zero_count;
+
+    unsigned long unmaps;
+    unsigned long maps;
+    unsigned long ins;
+    unsigned long outs;
+    unsigned long fins;
+    unsigned long fouts;
+    unsigned long zeros;
+    unsigned long segv;
+    unsigned long segprot;
+
+
 } summary_t;
+
 class Process{
 public:
     int pid;
@@ -91,8 +97,8 @@ vector<pair<string, int>> instruction_list;
 /****************************** summary variable *****************************/
 
 unsigned long long inst_count;
-unsigned long long proc_exit_count;
-unsigned long long context_switch_count;
+unsigned long long process_exits;
+unsigned long long ctx_switches;
 
 /*********************************** Pagers ***********************************/
 class Pager {
@@ -478,7 +484,20 @@ void print_output(){
         cout << endl;
     }
     if(statistic_option){
-
+        for(int i = 0; i < proc_vector.size(); i++){
+            Process* proc = proc_vector[i];
+            summary_t* pstats = &proc->summary;
+            printf("PROC[%d]: U=%lu M=%lu I=%lu O=%lu FI=%lu FO=%lu Z=%lu SV=%lu SP=%lu\n",
+                   proc->pid,
+                   pstats->unmaps, pstats->maps, pstats->ins, pstats->outs,
+                   pstats->fins, pstats->fouts, pstats->zeros,
+                   pstats->segv, pstats->segprot);
+            unsigned long long cost = pstats->maps * 300 + pstats->unmaps * 400 + pstats->ins * 3100 + pstats->outs * 2700 +
+                       pstats->fins * 2800 + pstats->fouts * 2400 + pstats->zeros * 140 + pstats->segv * 340 +
+                       pstats->segprot * 420;
+            printf("TOTALCOST %llu %llu %llu %llu %lu\n",
+                   inst_count, ctx_switches, process_exits, cost, sizeof(pte_t));
+        }
     }
 }
 void simulation(){
@@ -496,7 +515,7 @@ void simulation(){
 
         //context switch
         if (operation == "c") {
-            context_switch_count += 1;
+            ctx_switches += 1;
             curr_proc = proc_vector.at(second);
             if(o_option) printf("%d: ==> c %d\n", i, curr_proc->pid);
         }
@@ -514,7 +533,7 @@ void simulation(){
             if (!(pte->VALID)) {
 
                 if (not_sevg(curr_proc, vpage) == false) {
-                    curr_proc->summary.sevg_count +=1;
+                    curr_proc->summary.segv +=1;
                     if(o_option) cout << " SEVG" << endl;
                     continue;
                 }
@@ -570,7 +589,7 @@ void simulation(){
 
             // write --> MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
-                curr_proc->summary.segprot_count += 1;
+                curr_proc->summary.segprot += 1;
                 if(o_option) cout << " SEGPROT" << endl;
             }else if(operation == "w"){
                 pte->MODIFIED = 1;
@@ -581,7 +600,7 @@ void simulation(){
         if (operation == "e"){
 
             if(o_option) printf("%d: ==> e %d\n", i, curr_proc->pid);
-            proc_exit_count += 1;
+            process_exits += 1;
             if(o_option) printf("EXIT current process %d\n", curr_proc->pid);
 
             // check page table and reset flags
@@ -591,7 +610,7 @@ void simulation(){
 
                 if(pte->VALID){
                     if(o_option) printf(" UNMAP %d:%d\n", curr_proc->pid, i );
-                    summary.unmap_count += 1;
+                    summary.unmaps += 1;
                     frame_t* frame = &frame_table[pte->frame_number];
                     frame->pid = -1;
                     frame->vpage = -1;
