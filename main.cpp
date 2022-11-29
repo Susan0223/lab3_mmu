@@ -74,10 +74,10 @@ int NRU_victim_index = 0;
 int ofs = 0;
 int* randvals;
 int rand_num;
-bool o_option = false;
-bool page_table_option = false;
-bool frame_table_option = false;
-bool statistic_option = false;
+bool o_option = true;
+bool page_table_option = true;
+bool frame_table_option = true;
+bool statistic_option = true;
 string pager;
 string options;
 Process* curr_proc;
@@ -444,8 +444,27 @@ Pager* set_pager(string pager){
     if(pager[0] == 'w') return new WS();
     return nullptr;
 }
-void print_output(string options){
-    cout << page_table_option << endl;
+void print_output(){
+    if(page_table_option){
+        for(int i = 0; i < proc_vector.size(); i++){
+            Process* p = proc_vector[i];
+            printf("PT[%d]:", p->pid);
+            for (int j = 0; j < max_page_num; j++){
+                pte_t* pte = &p->page_table[j];
+                if (!pte->VALID && pte->PAGEDOUT){
+                    cout << " #";
+                }else if(!pte->VALID){
+                    cout << " *";
+                }else {
+                    string R = (pte->REFERENCED) ? "R" : "-";
+                    string M = (pte->MODIFIED) ? "M" : "-";
+                    string S = (pte->PAGEDOUT) ? "S" : "-";
+                    cout << " " + to_string(j) + ":" + R+M+S;
+                }
+            }
+            cout << endl;
+        }
+    }
 }
 void simulation(){
 
@@ -464,13 +483,13 @@ void simulation(){
         if (operation == "c") {
             context_switch_count += 1;
             curr_proc = proc_vector.at(second);
-            printf("%d: ==> c %d\n", i, curr_proc->pid);
+            if(o_option) printf("%d: ==> c %d\n", i, curr_proc->pid);
         }
         //read and write
         if (operation == "r" || operation == "w") {
 
             int vpage = second;
-            printf("%d: ==> %s %d\n", i, operation.c_str(), vpage);
+            if(o_option) printf("%d: ==> %s %d\n", i, operation.c_str(), vpage);
             pte_t *pte = &(curr_proc->page_table[vpage]);
 
             if (!(pte->CONFIGURATED)) {
@@ -481,7 +500,7 @@ void simulation(){
 
                 if (not_sevg(curr_proc, vpage) == false) {
                     curr_proc->summary.sevg_count +=1;
-                    cout << " SEVG" << endl;
+                    if(o_option) cout << " SEVG" << endl;
                     continue;
                 }
 
@@ -499,15 +518,15 @@ void simulation(){
                 else { //choose victim frame
                     //cout << victim_frame_index << endl;
                     victim_frame = THE_PAGER->select_victim_frame();
-                    cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
+                    if(o_option) cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
                     // check modified and file mapped
                     int prev_proc_id = victim_frame->pid;
                     pte_t *prev_pte = &proc_vector.at(prev_proc_id)->page_table[victim_frame->vpage];
                     if (prev_pte->MODIFIED && prev_pte->FILEMAPPED) {
-                        cout << " FOUT" << endl;
+                        if(o_option) cout << " FOUT" << endl;
                     } else if (prev_pte->MODIFIED) {
                         prev_pte->PAGEDOUT = 1;
-                        cout << " OUT" << endl;
+                        if(o_option) cout << " OUT" << endl;
                     }
                     //now victim_frame is available -> reset prev pte
                     prev_pte->VALID = 0;
@@ -523,13 +542,13 @@ void simulation(){
                 pte->VALID = 1;
 
                 if (pte->FILEMAPPED) {
-                    cout << " FIN" << endl;
+                    if(o_option) cout << " FIN" << endl;
                 } else if (pte->PAGEDOUT) {
-                    cout << " IN" << endl;
+                    if(o_option) cout << " IN" << endl;
                 } else {
-                    cout << " ZERO" << endl;
+                    if(o_option) cout << " ZERO" << endl;
                 }
-                cout << " MAP " + to_string(victim_frame->frame_id) << endl;
+                if(o_option) cout << " MAP " + to_string(victim_frame->frame_id) << endl;
             }
 
             pte->REFERENCED = 1;
@@ -537,7 +556,7 @@ void simulation(){
             // write --> MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
                 curr_proc->summary.segprot_count += 1;
-                cout << " SEGPROT" << endl;
+                if(o_option) cout << " SEGPROT" << endl;
             }else if(operation == "w"){
                 pte->MODIFIED = 1;
                 //cout << "proc_id: " + to_string(curr_proc->pid) + " page M : " + to_string(curr_proc->page_table[vpage].MODIFIED) << endl;
@@ -546,9 +565,9 @@ void simulation(){
         //exit
         if (operation == "e"){
 
-            printf("%d: ==> e %d\n", i, curr_proc->pid);
+            if(o_option) printf("%d: ==> e %d\n", i, curr_proc->pid);
             proc_exit_count += 1;
-            printf("EXIT current process %d\n", curr_proc->pid);
+            if(o_option) printf("EXIT current process %d\n", curr_proc->pid);
 
             // check page table and reset flags
             for(int i = 0; i < curr_proc->page_table.size(); i++){
@@ -556,7 +575,7 @@ void simulation(){
                 pte_t* pte = &curr_proc->page_table[i];
 
                 if(pte->VALID){
-                    printf(" UNMAP %d:%d\n", curr_proc->pid, i );
+                    if(o_option) printf(" UNMAP %d:%d\n", curr_proc->pid, i );
                     summary.unmap_count += 1;
                     frame_t* frame = &frame_table[pte->frame_number];
                     frame->pid = -1;
@@ -627,5 +646,5 @@ int main(int argc, char *argv[]){
 //    cout << "options: " + options << endl;
     readFile(argv[argc - 2], argv[argc - 1]);
     simulation();
-    print_output(options);
+    print_output();
 }
