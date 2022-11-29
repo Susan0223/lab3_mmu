@@ -66,6 +66,7 @@ public:
 int frame_size = 32;
 int victim_frame_index = 0;
 int instruction_count = 0;
+int NRU_victim_index = 0;
 Process* curr_proc;
 deque<frame_t> frame_table;
 deque<frame_t*> victim_table;
@@ -118,20 +119,6 @@ public:
                 victim_frame_index +=1;
                 break;
             }
-//            if(count == frame_size + 1){
-//                page->REFERENCED = 0;
-//                victim_frame_index += 1;
-//                break;
-//            }
-//            if(!page->REFERENCED){
-//                page->REFERENCED = 1;
-//                victim_frame_index += 1;
-//                break;
-//            }else{
-//                page->REFERENCED = 0;
-//                victim_frame_index += 1;
-//                count += 1;
-//            }
         }
         return victim_frame;
     }
@@ -139,43 +126,62 @@ public:
 class NRU : public Pager{
 public:
     frame_t* select_victim_frame(){
+
         frame_t* victim_frame;
+        Process* p;
         int frame_count = 0;
         pte_t* highest_class_pte;
+        bool highest_class_set = false;
+
         while(frame_count < frame_size){
-            victim_frame = victim_table[victim_frame_index];
-            Process* p = proc_vector[victim_frame->pid];
-            pte_t* pte = &p->page_table[victim_frame->vpage];
+
+            if(victim_frame_index >= frame_size){
+                victim_frame_index = 0;
+            }
+            frame_t* curr_frame = victim_table[victim_frame_index];
+            p = proc_vector[curr_frame->pid];
+            pte_t* pte = &p->page_table[curr_frame->vpage];
+            victim_frame_index += 1;
+            frame_count += 1;
+
+            if(!highest_class_set){
+                highest_class_pte = pte;
+                victim_frame = curr_frame;
+                highest_class_set = true;
+            }
+
             if(pte->REFERENCED == 0 && pte->MODIFIED == 0){
-                victim_frame_index += 1;
-                return victim_frame;
+                victim_frame = curr_frame;
+                break;
             }
-            if(highest_class_pte->REFERENCED == pte->REFERENCED && highest_class_pte->MODIFIED == pte->MODIFIED){
-                victim_frame_index ++;
+            else if(highest_class_pte->REFERENCED == 0 && highest_class_pte->MODIFIED == 1){
                 continue;
             }
-            if(pte->REFERENCED == 0) {
-                victim_frame_index ++;
+            else if(highest_class_pte->REFERENCED != 0 && pte->REFERENCED == 0) {
                 highest_class_pte = pte;
+                victim_frame = curr_frame;
                 continue;
             }
-            if(pte->MODIFIED == 0){
-                victim_frame_index ++;
+            else if(highest_class_pte->MODIFIED != 0 && pte->MODIFIED == 0){
                 highest_class_pte = pte;
+                victim_frame = curr_frame;
                 continue;
             }
         }
 
         //reset REFERENCE bit
         if(instruction_count >= 50){
-            victim_frame = victim_table[victim_frame_index];
-            Process* p = proc_vector[victim_frame->pid];
-            for(int i = 0; i < p->page_table.size(); i++){
-                pte_t* pte = &p->page_table[i];
+            for(int i = 0; i < frame_table.size(); i++){
+                Process* p = proc_vector[frame_table[i].pid];
+                pte_t* pte = &p->page_table[frame_table[i].vpage];
                 pte->REFERENCED = 0;
             }
             instruction_count = 0;
         }
+
+        //increment victim_index by 1
+        victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
+
 
         return victim_frame;
     }
@@ -347,7 +353,9 @@ void simulation(){
                     free_pool.pop_front();
                 }
                 else { //choose victim frame
+                    //cout << victim_frame_index << endl;
                     victim_frame = THE_PAGER->select_victim_frame();
+
                     cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
                     // check modified and file mapped
                     int prev_proc_id = victim_frame->pid;
@@ -385,7 +393,6 @@ void simulation(){
             // write --> MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
                 curr_proc->summary.segprot_count += 1;
-
                 cout << " SEGPROT" << endl;
             }else if(operation == "w"){
                 pte->MODIFIED = 1;
