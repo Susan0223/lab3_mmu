@@ -13,6 +13,7 @@
 #include <climits>
 
 #define max_page_num 64
+#define TAU 49
 using namespace std;
 
 /*********************************** struct and class *************************/
@@ -41,6 +42,8 @@ typedef struct frame_t{
     int frame_id;
     int vpage;
     bool dirty;
+    unsigned int aging:32;
+    unsigned long last_used_time;
 } frame_t;
 typedef struct summary_t{
     int sevg_count;
@@ -63,7 +66,7 @@ public:
 
 /****************************** global variable ******************************/
 
-int frame_size = 32;
+int frame_size = 16;
 int victim_frame_index = 0;
 int instruction_count = 1;
 int NRU_victim_index = 0;
@@ -127,47 +130,38 @@ class NRU : public Pager{
 public:
     frame_t* select_victim_frame(){
 
-        frame_t* victim_frame;
-        Process* p;
+        if(victim_frame_index >= frame_size){
+            victim_frame_index = 0;
+        }
+
         int frame_count = 0;
-        pte_t* highest_class_pte;
-        bool highest_class_set = false;
+        frame_t* victim_frame = victim_table[victim_frame_index];
+        Process* p = proc_vector[victim_frame->pid];
+        pte_t* victim_pte = &p->page_table[victim_frame->vpage];
 
         while(frame_count < frame_size){
 
             if(victim_frame_index >= frame_size){
                 victim_frame_index = 0;
             }
+
             frame_t* curr_frame = victim_table[victim_frame_index];
             p = proc_vector[curr_frame->pid];
-            pte_t* pte = &p->page_table[curr_frame->vpage];
+            pte_t* curr_pte = &p->page_table[curr_frame->vpage];
+            //cout << "victim frame index: " + to_string(victim_frame_index) << endl;
             victim_frame_index += 1;
             frame_count += 1;
 
-            if(!highest_class_set){
-                highest_class_pte = pte;
-                victim_frame = curr_frame;
-                highest_class_set = true;
+            int curr_pte_level = 2 * curr_pte->REFERENCED + curr_pte->MODIFIED;
+            int victim_pte_level = 2 * victim_pte->REFERENCED + victim_pte->MODIFIED;
 
-            }
-
-            if(pte->REFERENCED == 0 && pte->MODIFIED == 0){
+            if(curr_pte_level == 0){
                 victim_frame = curr_frame;
-                cout << "pte: " + to_string(victim_frame->vpage) + " "+ to_string(pte->REFERENCED) + " " + to_string(pte->MODIFIED)<< endl;
                 break;
             }
-            else if(highest_class_pte->REFERENCED == 0 && highest_class_pte->MODIFIED == 1){
-                continue;
-            }
-            else if(highest_class_pte->REFERENCED != 0 && pte->REFERENCED == 0) {
-                highest_class_pte = pte;
+            else if(curr_pte_level < victim_pte_level){
+                victim_pte = curr_pte;
                 victim_frame = curr_frame;
-                continue;
-            }
-            else if(highest_class_pte->MODIFIED != 0 && pte->MODIFIED == 0){
-                highest_class_pte = pte;
-                victim_frame = curr_frame;
-                continue;
             }
         }
 
@@ -179,12 +173,70 @@ public:
                 pte_t* pte = &p->page_table[frame_table[i].vpage];
                 pte->REFERENCED = 0;
             }
-            instruction_count = 0;
+            instruction_count = 1;
         }
 
         //increment victim_index by 1
         victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
 
+        return victim_frame;
+    }
+};
+class AGING: public Pager{
+public:
+//    frame_t* select_victim_frame(){
+//
+//        if(victim_frame_index >= frame_size){
+//            victim_frame_index = 0;
+//        }
+//        frame_t* victim_frame = &frame_table[victim_frame_index];
+//        Process* p = proc_vector[victim_frame->pid];
+//        pte_t* victim_pte = &p->page_table[victim_frame->vpage];
+//
+//        unsigned long min_age = frame_table[victim_frame_index].aging >> 1;
+//        cout << min_age << endl;
+////        if (victim_pte->REFERENCED == 1) {
+////            min_age = (min_age | 0x80000000);
+////        }
+//        min_age = (min_age | 0x80000000);
+//        cout << min_age << endl;
+//
+//    }
+};
+class WS: public Pager{
+public:
+    frame_t* select_victim_frame(){
+
+        unsigned long long min_time = ULLONG_MAX;
+        frame_t* victim_frame = victim_table[victim_frame_index];
+
+        for(int i = 0; i < frame_size; i++){
+
+            if(victim_frame_index >= frame_size){
+                victim_frame_index = 0;
+            }
+
+            frame_t* curr_frame = victim_table[victim_frame_index];
+            Process* p = proc_vector[curr_frame->pid];
+            pte_t* curr_pte = &p->page_table[curr_frame->vpage];
+
+            unsigned long long frame_age = instruction_count - curr_frame->last_used_time;
+
+            if(curr_pte->REFERENCED == 1){
+                curr_pte->REFERENCED = 0;
+                curr_frame->last_used_time = instruction_count;
+            }else{
+                if(frame_age > TAU) {
+                    break;
+                }
+                else if(curr_frame->last_used_time < min_time){
+                    victim_frame = curr_frame;
+                    min_time = curr_frame->last_used_time;
+                }
+            }
+            victim_frame_index += 1;
+        }
+        victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
         return victim_frame;
     }
 };
@@ -278,6 +330,7 @@ void initialize_frame_table(int frame_size){
         frame.dirty = false;
         frame.vpage = -1;
         frame.frame_id = i;
+        frame.aging = 0;
         frame_table.push_back(frame);
     }
 }
@@ -308,7 +361,7 @@ void reset_frame_queue(){
 void simulation(){
 
     initialize_frame_table(frame_size);
-    Pager* THE_PAGER = new NRU();
+    Pager* THE_PAGER = new WS();
     initialize_free_pool();
 
 /*******************************************************************************/
@@ -398,6 +451,7 @@ void simulation(){
                 cout << " SEGPROT" << endl;
             }else if(operation == "w"){
                 pte->MODIFIED = 1;
+                //cout << "proc_id: " + to_string(curr_proc->pid) + " page M : " + to_string(curr_proc->page_table[vpage].MODIFIED) << endl;
             }
         }
         //exit
@@ -418,6 +472,8 @@ void simulation(){
                     frame_t* frame = &frame_table[pte->frame_number];
                     frame->pid = -1;
                     frame->vpage = -1;
+                    frame->aging = 0;
+                    frame->last_used_time = 0;
                     frame->dirty = false;
                     free_pool.push_back(frame);
                 }
@@ -430,6 +486,8 @@ void simulation(){
                 pte->REFERENCED = 0;
                 pte->FILEMAPPED = 0;
             }
+
+            curr_proc = nullptr;
         }
 
         instruction_count += 1;
