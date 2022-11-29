@@ -14,6 +14,7 @@
 
 #define max_page_num 64
 #define TAU 49
+#define MAX_SIZE 30
 using namespace std;
 
 /*********************************** struct and class *************************/
@@ -42,7 +43,7 @@ typedef struct frame_t{
     int frame_id;
     int vpage;
     bool dirty;
-    unsigned int counter:32;
+    unsigned int counter : 32;
     unsigned long last_used_time;
 } frame_t;
 typedef struct summary_t{
@@ -70,6 +71,9 @@ int frame_size = 16;
 int victim_frame_index = 0;
 int instruction_count = 1;
 int NRU_victim_index = 0;
+int ofs = 0;
+int* randvals;
+int rand_num;
 Process* curr_proc;
 deque<frame_t> frame_table;
 deque<frame_t*> victim_table;
@@ -198,46 +202,50 @@ public:
          * 3) reset REFERENCE bit
          * 4) min_counter = min(min_counter, curr_counter)
          */
-
         if(victim_frame_index >= frame_size){
             victim_frame_index = 0;
         }
-
-        frame_t* victim_frame;
-        pte_t* victim_pte;
-
-        victim_frame = &frame_table[victim_frame_index];
+        frame_t* victim_frame = &frame_table[victim_frame_index];
         Process* p = proc_vector[victim_frame->pid];
-        victim_pte = &p->page_table[victim_frame->vpage];
-        unsigned int min_counter = frame_table[victim_frame_index].counter >> 1;
+        pte_t* victim_pte = &p->page_table[victim_frame->vpage];
+        frame_table[victim_frame_index].counter = frame_table[victim_frame_index].counter >> 1;
+        unsigned int min_counter = frame_table[victim_frame_index].counter;
         if(victim_pte->REFERENCED == 1){
-            min_counter = min_counter | 0x80000000;
+            min_counter = (min_counter | 0x80000000);
         }
         victim_frame_index += 1;
 
         for(int i = 0; i < frame_size; i++ ){
+
             if(victim_frame_index >= frame_size){
                 victim_frame_index = 0;
             }
             frame_t* curr_frame = &frame_table[victim_frame_index];
             Process* curr_p = proc_vector[curr_frame->pid];
             pte_t* curr_pte = &curr_p->page_table[curr_frame->vpage];
-            unsigned int curr_counter = frame_table[victim_frame_index].counter >> 1;
-            if(curr_pte->REFERENCED == 1){
-                curr_counter = curr_counter | 0x80000000;
+            frame_table[victim_frame_index].counter = frame_table[victim_frame_index].counter >> 1;
+            unsigned int curr_counter = frame_table[victim_frame_index].counter;
+            if(curr_pte->REFERENCED == 1) {
+                curr_counter = (curr_counter | 0x80000000);
             }
-            victim_frame_index += 1;
+            curr_pte->REFERENCED = 0;
 
+            //cout <<"curr: " + to_string(curr_counter) << endl;
+            //cout <<"min: " + to_string(min_counter) << endl;
             if(min_counter > curr_counter){
+                cout <<"vicim_frame_id " + to_string(curr_frame->frame_id) << endl;
+                //cout <<"min: " + to_string(min_counter) << endl;
                 victim_frame = curr_frame;
                 min_counter = curr_counter;
             }
+
+            victim_frame_index += 1;
         }
-        reset_counter(victim_frame);
+
+        victim_frame->counter = 0;
         victim_frame_index = (victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1;
         return victim_frame;
     }
-
 };
 class WS: public Pager{
 public:
@@ -277,6 +285,19 @@ public:
     }
     void reset_counter(frame_t* victim_frame){}
 };
+class RANDOM: public Pager{
+public:
+    frame_t* select_victim_frame(){
+        if(ofs == rand_num){
+            ofs = 0;
+        }
+        int random_index = randvals[ofs] % frame_size;
+        frame_t* victim_frame = &frame_table[random_index];
+        ofs++;
+        return victim_frame;
+    }
+    void reset_counter(frame_t* victim_frame){}
+};
 /*********************************** methods ***********************************/
 bool not_sevg(Process* p, int vpage){
     int sevg_flag = false;
@@ -287,7 +308,7 @@ bool not_sevg(Process* p, int vpage){
     }
     return sevg_flag;
 }
-void readFile(char* inputPtr){
+void readFile(char* inputPtr, char* rfilePtr){
 
     int total_proc = -1;
     int curr_proc_id = 0;
@@ -357,6 +378,19 @@ void readFile(char* inputPtr){
             instruction_list.push_back(p);
         }
         inst_count = instruction_list.size();
+
+        char buff[MAX_SIZE];
+        string rFileName(rfilePtr);
+        ifstream rFile(rFileName);
+        rFile.getline(buff, MAX_SIZE); // get the first line, that's '40000'
+        int num = atoi(buff); // num: 40000
+        rand_num = num;
+        randvals = new int[num];
+        for(int i = 0; i < num; i++) {  // get the rest 40000 numbers
+            rFile.getline(buff, MAX_SIZE);
+            randvals[i] = atoi(buff);
+        }
+        rFile.close();
     }
     inputFile.close();
 }
@@ -398,7 +432,7 @@ void reset_frame_queue(){
 void simulation(){
 
     initialize_frame_table(frame_size);
-    Pager* THE_PAGER = new WS();
+    Pager* THE_PAGER = new RANDOM();
     initialize_free_pool();
 
 /*******************************************************************************/
@@ -447,7 +481,6 @@ void simulation(){
                 else { //choose victim frame
                     //cout << victim_frame_index << endl;
                     victim_frame = THE_PAGER->select_victim_frame();
-
                     cout << " UNMAP " << victim_frame->pid << ":" << victim_frame->vpage << endl;
                     // check modified and file mapped
                     int prev_proc_id = victim_frame->pid;
@@ -482,6 +515,7 @@ void simulation(){
             }
 
             pte->REFERENCED = 1;
+
             // write --> MODIFIED or SEGPROT
             if(pte->WRITE_PROTECT && operation == "w"){
                 curr_proc->summary.segprot_count += 1;
@@ -526,12 +560,11 @@ void simulation(){
 
             curr_proc = nullptr;
         }
-
         instruction_count += 1;
     }
 }
 
 int main(int argc, char *argv[]){
-    readFile(argv[1]);
+    readFile(argv[1], argv[2]);
     simulation();
 }
