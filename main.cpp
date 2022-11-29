@@ -65,7 +65,7 @@ public:
 
 int frame_size = 32;
 int victim_frame_index = 0;
-int instruction_count = 0;
+int instruction_count = 1;
 int NRU_victim_index = 0;
 Process* curr_proc;
 deque<frame_t> frame_table;
@@ -148,10 +148,12 @@ public:
                 highest_class_pte = pte;
                 victim_frame = curr_frame;
                 highest_class_set = true;
+
             }
 
             if(pte->REFERENCED == 0 && pte->MODIFIED == 0){
                 victim_frame = curr_frame;
+                cout << "pte: " + to_string(victim_frame->vpage) + " "+ to_string(pte->REFERENCED) + " " + to_string(pte->MODIFIED)<< endl;
                 break;
             }
             else if(highest_class_pte->REFERENCED == 0 && highest_class_pte->MODIFIED == 1){
@@ -171,6 +173,7 @@ public:
 
         //reset REFERENCE bit
         if(instruction_count >= 50){
+            cout << "instruction count " + to_string(instruction_count)<< endl;
             for(int i = 0; i < frame_table.size(); i++){
                 Process* p = proc_vector[frame_table[i].pid];
                 pte_t* pte = &p->page_table[frame_table[i].vpage];
@@ -181,7 +184,6 @@ public:
 
         //increment victim_index by 1
         victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
-
 
         return victim_frame;
     }
