@@ -465,6 +465,21 @@ void print_output(){
             cout << endl;
         }
     }
+    if(frame_table_option){
+        cout << "FT:";
+        for(int i = 0; i < frame_size; i++){
+            frame_t* frame = &frame_table[i];
+            if(frame->vpage != -1){
+                printf(" %d:%d", frame->frame_id, frame->vpage);
+            }else{
+                cout << " *";
+            }
+        }
+        cout << endl;
+    }
+    if(statistic_option){
+
+    }
 }
 void simulation(){
 
