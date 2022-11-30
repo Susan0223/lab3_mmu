@@ -51,7 +51,6 @@ typedef struct summary_t{
     unsigned long segv;
     unsigned long segprot;
 
-
 } summary_t;
 
 class Process{
@@ -92,6 +91,7 @@ vector<pair<string, int>> instruction_list;
 unsigned long long inst_count;
 unsigned long long process_exits;
 unsigned long long ctx_switches;
+unsigned long long read_write;
 
 /*********************************** Pagers ***********************************/
 class Pager {
@@ -469,7 +469,7 @@ void print_output(){
         for(int i = 0; i < frame_size; i++){
             frame_t* frame = &frame_table[i];
             if(frame->vpage != -1){
-                printf(" %d:%d", frame->frame_id, frame->vpage);
+                printf(" %d:%d", frame->pid, frame->vpage);
             }else{
                 cout << " *";
             }
@@ -477,6 +477,7 @@ void print_output(){
         cout << endl;
     }
     if(statistic_option){
+        unsigned long long cost = 0;
         for(int i = 0; i < proc_vector.size(); i++){
             Process* proc = proc_vector[i];
             summary_t* pstats = &proc->summary;
@@ -485,12 +486,13 @@ void print_output(){
                    pstats->unmaps, pstats->maps, pstats->ins, pstats->outs,
                    pstats->fins, pstats->fouts, pstats->zeros,
                    pstats->segv, pstats->segprot);
-            unsigned long long cost = pstats->maps * 300 + pstats->unmaps * 400 + pstats->ins * 3100 + pstats->outs * 2700 +
+            cost += pstats->maps * 300 + pstats->unmaps * 400 + pstats->ins * 3100 + pstats->outs * 2700 +
                        pstats->fins * 2800 + pstats->fouts * 2400 + pstats->zeros * 140 + pstats->segv * 340 +
                        pstats->segprot * 420;
-            printf("TOTALCOST %llu %llu %llu %llu %lu\n",
-                   inst_count, ctx_switches, process_exits, cost, sizeof(pte_t));
         }
+        cost += read_write * 1 + ctx_switches * 130 + process_exits * 1250;
+        printf("TOTALCOST %llu %llu %llu %llu %lu\n",
+               inst_count, ctx_switches, process_exits, cost, sizeof(pte_t));
     }
 }
 void simulation(){
@@ -515,6 +517,7 @@ void simulation(){
         //read and write
         if (operation == "r" || operation == "w") {
 
+            read_write += 1;
             int vpage = second;
             if(o_option) printf("%d: ==> %s %d\n", i, operation.c_str(), vpage);
             pte_t *pte = &(curr_proc->page_table[vpage]);
@@ -527,7 +530,7 @@ void simulation(){
 
                 if (not_sevg(curr_proc, vpage) == false) {
                     curr_proc->summary.segv +=1;
-                    if(o_option) cout << " SEVG" << endl;
+                    if(o_option) cout << " SEGV" << endl;
                     continue;
                 }
 
@@ -621,7 +624,7 @@ void simulation(){
                 // 1) UNMAP pte from frame page
                 if(pte->VALID){
                     if(o_option) printf(" UNMAP %d:%d\n", curr_proc->pid, i );
-                    summary.unmaps += 1;
+                    curr_proc->summary.unmaps += 1;
                     frame_t* frame = &frame_table[pte->frame_number];
                     frame->pid = -1;
                     frame->vpage = -1;
@@ -629,17 +632,23 @@ void simulation(){
                     frame->last_used_time = 0;
                     frame->dirty = false;
                     free_pool.push_back(frame);
+
+                    // 2) check MODIFIED and FILEMAPPED
+                    if (pte->MODIFIED && pte->FILEMAPPED){
+                        curr_proc->summary.fouts++;
+                        if (o_option) cout << " FOUT" << endl;
+                    }
                 }
 
-                // 2) reset pte bits
+                // 3) reset pte bits
                 pte->VALID = 0;
                 pte->frame_number = -1;
-                pte->MODIFIED = 0;
                 pte->WRITE_PROTECT = 0;
                 pte->CONFIGURATED = 0;
                 pte->PAGEDOUT = 0;
                 pte->REFERENCED = 0;
                 pte->FILEMAPPED = 0;
+                pte->MODIFIED = 0;
             }
 
             // 3) curr_proc = nullptr
