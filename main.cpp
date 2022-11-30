@@ -67,7 +67,6 @@ public:
 
 int frame_size;
 int victim_frame_index = 0;
-//int instruction_count = 1;
 int instruction_count = 0;
 int NRU_victim_index = 0;
 int ofs = 0;
@@ -219,14 +218,14 @@ public:
         frame_t* victim_frame = &frame_table[victim_frame_index];
         Process* p = proc_vector[victim_frame->pid];
         pte_t* victim_pte = &p->page_table[victim_frame->vpage];
-        frame_table[victim_frame_index].counter = frame_table[victim_frame_index].counter >> 1;
-        unsigned int min_counter = frame_table[victim_frame_index].counter;
+        victim_frame->counter >>= 1;
         if(victim_pte->REFERENCED == 1){
-            min_counter = (min_counter | 0x80000000);
+            victim_frame->counter = (victim_frame->counter | 0x80000000);
+            victim_pte->REFERENCED = 0;
         }
         victim_frame_index += 1;
 
-        for(int i = 0; i < frame_size; i++ ){
+        for(int i = 0; i < frame_size - 1; i++ ){
 
             if(victim_frame_index >= frame_size){
                 victim_frame_index = 0;
@@ -234,26 +233,22 @@ public:
             frame_t* curr_frame = &frame_table[victim_frame_index];
             Process* curr_p = proc_vector[curr_frame->pid];
             pte_t* curr_pte = &curr_p->page_table[curr_frame->vpage];
-            frame_table[victim_frame_index].counter = frame_table[victim_frame_index].counter >> 1;
-            unsigned int curr_counter = frame_table[victim_frame_index].counter;
+            curr_frame->counter >>= 1;
             if(curr_pte->REFERENCED == 1) {
-                curr_counter = (curr_counter | 0x80000000);
+                curr_frame->counter = (curr_frame->counter | 0x80000000);
+                curr_pte->REFERENCED = 0;
             }
-            curr_pte->REFERENCED = 0;
 
-            //cout <<"curr: " + to_string(curr_counter) << endl;
-            //cout <<"min: " + to_string(min_counter) << endl;
-            if(min_counter > curr_counter){
-                cout <<"vicim_frame_id " + to_string(curr_frame->frame_id) << endl;
+            //cout << "victim_frame: " + to_string(victim_frame->frame_id) + " " + to_string(victim_frame->counter) << endl;
+            //cout << "curr_frame: " + to_string(curr_frame->frame_id) + " " + to_string(curr_frame->counter) << endl;
+            if(victim_frame->counter > curr_frame->counter){
+                //cout <<"vicim_frame_id " + to_string(curr_frame->frame_id) << endl;
                 //cout <<"min: " + to_string(min_counter) << endl;
                 victim_frame = curr_frame;
-                min_counter = curr_counter;
             }
 
             victim_frame_index += 1;
         }
-
-        victim_frame->counter = 0;
         victim_frame_index = (victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1;
         return victim_frame;
     }
@@ -601,6 +596,7 @@ void simulation(){
 
                 // 7) map frame page
                 curr_proc->summary.maps += 1;
+                THE_PAGER->reset_counter(victim_frame);
                 if(o_option) cout << " MAP " + to_string(victim_frame->frame_id) << endl;
             }
 
