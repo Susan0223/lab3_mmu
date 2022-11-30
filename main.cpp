@@ -140,11 +140,14 @@ public:
 };
 class NRU : public Pager{
 public:
+    unsigned long last_referenced = 0;
     frame_t* select_victim_frame(){
 
         if (victim_frame_index >= frame_size) {
             victim_frame_index = 0;
         }
+
+        bool update_reference = (instruction_count - last_referenced >= 50) ? true : false;
 
         frame_t* victim_frame = victim_table[victim_frame_index];
         Process* p = proc_vector[victim_frame->pid];
@@ -152,7 +155,7 @@ public:
         int lowest_class = 2 * victim_pte->REFERENCED + victim_pte->MODIFIED;
         victim_frame_index += 1;
 
-        if(lowest_class == 0){
+        if(lowest_class == 0 && !update_reference){
             victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
             return victim_frame;
         }
@@ -180,14 +183,15 @@ public:
         }
 
         //reset REFERENCE bit
-        if(instruction_count >= 50){
+        if(update_reference){
             //cout << "instruction count " + to_string(instruction_count)<< endl;
             for(int i = 0; i < frame_table.size(); i++){
                 Process* p = proc_vector[frame_table[i].pid];
                 pte_t* pte = &p->page_table[frame_table[i].vpage];
                 pte->REFERENCED = 0;
             }
-            instruction_count = 0;
+            last_referenced = instruction_count;
+            //instruction_count = 0;
         }
 
         //increment victim_index by 1
@@ -508,6 +512,7 @@ void simulation(){
 
         string operation = instruction_list.at(i).first;
         int second = instruction_list.at(i).second;
+        instruction_count += 1;
 
         //context switch
         if (operation == "c") {
@@ -609,6 +614,7 @@ void simulation(){
                 pte->MODIFIED = 1;
                 //cout << "proc_id: " + to_string(curr_proc->pid) + " page M : " + to_string(curr_proc->page_table[vpage].MODIFIED) << endl;
             }
+
         }
         //exit
         if (operation == "e"){
@@ -655,7 +661,6 @@ void simulation(){
             // 3) curr_proc = nullptr
             curr_proc = nullptr;
         }
-        instruction_count += 1;
     }
 }
 
