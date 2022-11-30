@@ -67,7 +67,8 @@ public:
 
 int frame_size;
 int victim_frame_index = 0;
-int instruction_count = 1;
+//int instruction_count = 1;
+int instruction_count = 0;
 int NRU_victim_index = 0;
 int ofs = 0;
 int* randvals;
