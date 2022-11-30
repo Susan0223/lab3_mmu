@@ -142,55 +142,56 @@ class NRU : public Pager{
 public:
     frame_t* select_victim_frame(){
 
-        if(victim_frame_index >= frame_size){
+        if (victim_frame_index >= frame_size) {
             victim_frame_index = 0;
         }
 
-        int frame_count = 0;
         frame_t* victim_frame = victim_table[victim_frame_index];
         Process* p = proc_vector[victim_frame->pid];
         pte_t* victim_pte = &p->page_table[victim_frame->vpage];
+        int lowest_class = 2 * victim_pte->REFERENCED + victim_pte->MODIFIED;
+        victim_frame_index += 1;
 
-        while(frame_count < frame_size){
+        if(lowest_class == 0){
+            victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
+            return victim_frame;
+        }
 
-            if(victim_frame_index >= frame_size){
+        for(int i = 0; i < frame_size; i++) {
+
+            if (victim_frame_index >= frame_size) {
                 victim_frame_index = 0;
             }
-
-            frame_t* curr_frame = victim_table[victim_frame_index];
+            frame_t *curr_frame = victim_table[victim_frame_index];
             p = proc_vector[curr_frame->pid];
-            pte_t* curr_pte = &p->page_table[curr_frame->vpage];
-            //cout << "victim frame index: " + to_string(victim_frame_index) << endl;
+            pte_t *curr_pte = &p->page_table[curr_frame->vpage];
+            int curr_class = 2 * curr_pte->REFERENCED + curr_pte->MODIFIED;
+            //int victim_pte_level = 2 * victim_pte->REFERENCED + victim_pte->MODIFIED;
             victim_frame_index += 1;
-            frame_count += 1;
 
-            int curr_pte_level = 2 * curr_pte->REFERENCED + curr_pte->MODIFIED;
-            int victim_pte_level = 2 * victim_pte->REFERENCED + victim_pte->MODIFIED;
-
-            if(curr_pte_level == 0){
+            if (curr_class == 0 && instruction_count < 50) {
                 victim_frame = curr_frame;
                 break;
-            }
-            else if(curr_pte_level < victim_pte_level){
+            } else if (curr_class < lowest_class) {
                 victim_pte = curr_pte;
                 victim_frame = curr_frame;
+                lowest_class = curr_class;
             }
         }
 
         //reset REFERENCE bit
         if(instruction_count >= 50){
-            cout << "instruction count " + to_string(instruction_count)<< endl;
+            //cout << "instruction count " + to_string(instruction_count)<< endl;
             for(int i = 0; i < frame_table.size(); i++){
                 Process* p = proc_vector[frame_table[i].pid];
                 pte_t* pte = &p->page_table[frame_table[i].vpage];
                 pte->REFERENCED = 0;
             }
-            instruction_count = 1;
+            instruction_count = 0;
         }
 
         //increment victim_index by 1
         victim_frame_index = ((victim_frame->frame_id == frame_size) ? 0 : victim_frame->frame_id + 1);
-
         return victim_frame;
     }
     void reset_counter(frame_t* victim_frame){}
