@@ -41,15 +41,15 @@ typedef struct frame_t{
 } frame_t;
 typedef struct summary_t{
 
-    unsigned long unmaps;
-    unsigned long maps;
-    unsigned long ins;
-    unsigned long outs;
-    unsigned long fins;
-    unsigned long fouts;
-    unsigned long zeros;
-    unsigned long segv;
-    unsigned long segprot;
+    unsigned long unmaps = 0;
+    unsigned long maps = 0;
+    unsigned long ins = 0;
+    unsigned long outs = 0;
+    unsigned long fins = 0;
+    unsigned long fouts = 0;
+    unsigned long zeros = 0;
+    unsigned long segv = 0;
+    unsigned long segprot = 0;
 
 } summary_t;
 
@@ -72,10 +72,10 @@ int NRU_victim_index = 0;
 int ofs = 0;
 int* randvals;
 int rand_num;
-bool o_option = true;
-bool page_table_option = true;
-bool frame_table_option = true;
-bool statistic_option = true;
+bool o_option = false;
+bool page_table_option = false;
+bool frame_table_option = false;
+bool statistic_option = false;
 string pager;
 string options;
 Process* curr_proc;
@@ -663,9 +663,10 @@ void simulation(){
 
 int main(int argc, char *argv[]){
 
-    int c;
-    while ((c = getopt(argc, argv, "f:a:o:")) != -1){
-        switch (c) {
+    int ch;
+
+    while ((ch = getopt(argc, argv, "f:a:o:")) != -1){
+        switch (ch) {
             case 'f':
                 frame_size = stoi(optarg);
                 break;
@@ -674,8 +675,8 @@ int main(int argc, char *argv[]){
                 break;
             case 'o':
                 options = optarg;
-                for (auto &ch : options) {
-                    switch (ch) {
+                for(char opt : options){
+                    switch (opt) {
                         case 'O':
                             o_option = true;
                             break;
@@ -692,19 +693,18 @@ int main(int argc, char *argv[]){
                             break;
                     }
                 }
-            case '?':
-                printf("error optopt: %c\n", optopt);
-                printf("error opterr: %d\n", opterr);
-                break;
+//            case '?':
+//                printf("error optopt: %c\n", optopt);
+//                printf("error opterr: %d\n", opterr);
+//                break;
             default:
-                exit(EXIT_FAILURE);
-                break;
+                exit(-1);
         }
     }
-//    cout << "frame_size: " + to_string(frame_size) << endl;
-//    cout << "pager: " + pager << endl;
-//    cout << "options: " + options << endl;
+    cout << "frame_size: " + to_string(frame_size) << endl;
+    cout << "pager: " + pager << endl;
+    cout << page_table_option << endl;
     readFile(argv[argc - 2], argv[argc - 1]);
-    simulation();
-    print_output();
+    //simulation();
+    //print_output();
 }
