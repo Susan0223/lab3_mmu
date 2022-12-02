@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <deque>
+#include <climits>
+#include <string.h>
 
 #define max_page_num 64
 #define TAU 49
@@ -674,19 +677,25 @@ int main(int argc, char *argv[]){
                 pager = optarg;
                 break;
             case 'o':
+                // cout << "**********" << endl;
                 options = optarg;
+                // cout << endl << "options = " << options << endl;
                 for(char opt : options){
                     switch (opt) {
                         case 'O':
+                            // cout << endl << "*********" << endl;
                             o_option = true;
                             break;
                         case 'P':
+                                                    // cout << endl << "*********" << endl;
                             page_table_option = true;
                             break;
                         case 'F':
+                        //   cout << endl << "*********" << endl;
                             frame_table_option = true;
                             break;
                         case 'S':
+                        //   cout << endl << "*********" << endl;
                             statistic_option = true;
                             break;
                         default:
@@ -697,14 +706,15 @@ int main(int argc, char *argv[]){
 //                printf("error optopt: %c\n", optopt);
 //                printf("error opterr: %d\n", opterr);
 //                break;
-            default:
-                exit(-1);
+            // default:
+            //     exit(-1);
         }
     }
-    cout << "frame_size: " + to_string(frame_size) << endl;
-    cout << "pager: " + pager << endl;
-    cout << page_table_option << endl;
+    //   cout << endl << "*********" << endl;
+    // cout << "frame_size: " + to_string(frame_size) << endl;
+    // cout << "pager: " + pager << endl;
+    // cout << page_table_option << endl;
     readFile(argv[argc - 2], argv[argc - 1]);
-    //simulation();
-    //print_output();
+    simulation();
+    print_output();
 }
